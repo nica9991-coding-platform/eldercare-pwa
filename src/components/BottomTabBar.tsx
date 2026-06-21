@@ -3,6 +3,7 @@ import { NavLink } from 'react-router-dom';
 const TABS = [
   { to: '/dashboard', label: 'Today', glyph: '◷' },
   { to: '/history', label: 'History', glyph: '▤' },
+  { to: '/radar', label: 'Radar', glyph: '✦' },
   { to: '/members', label: 'Circle', glyph: '◎' },
   { to: '/more', label: 'More', glyph: '⋯' },
 ];
