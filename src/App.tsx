@@ -6,6 +6,7 @@ import { MembersInvite } from './screens/MembersInvite';
 import { TodaySenior } from './screens/TodaySenior';
 import { DashboardFamily } from './screens/DashboardFamily';
 import { Onboard } from './screens/Onboard';
+import { HistoryView } from './screens/HistoryView';
 import { DevPanel } from './components/DevPanel';
 import { BottomTabBar } from './components/BottomTabBar';
 
@@ -81,7 +82,7 @@ function App() {
               path="/history"
               element={
                 <RequireAuth>
-                  <ComingSoon title="History" />
+                  <HistoryView />
                 </RequireAuth>
               }
             />

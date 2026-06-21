@@ -66,6 +66,21 @@ export interface DailySummary {
   updatedAt: string;
 }
 
+export interface HistoryDoseDetail {
+  medName: string;
+  scheduledFor: string;
+  status: DoseStatus;
+}
+
+export interface HistoryDay {
+  date: string; // YYYY-MM-DD
+  label: string; // e.g. "Mon, Jun 16"
+  weekday: string; // e.g. "Mon"
+  taken: number;
+  total: number;
+  doses: HistoryDoseDetail[];
+}
+
 export interface RoleInfo {
   role: Role;
   label: string;

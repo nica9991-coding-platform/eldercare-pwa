@@ -10,6 +10,7 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 import { SESv2Client, SendEmailCommand } from '@aws-sdk/client-sesv2';
 import { assertMembership, UnauthorizedError } from '../assert-membership/handler';
+import { computeSeverity, generateSummaryText } from './summary';
 
 const ddbClient = new DynamoDBClient();
 const ddb = DynamoDBDocumentClient.from(ddbClient);
@@ -99,7 +100,20 @@ async function getCircleDashboard(sub: string, circleId: string) {
     ).Items ?? []
   ).filter((a) => !a.resolvedAt);
 
-  const summary = buildDailySummary(doses, alerts);
+  // CareCircle itself is ownerDefinedIn('ownerId') — only the OWNER could
+  // read it via direct model access, but every member needs the senior's
+  // name/initials for their own screens, so it rides along here too.
+  const circle = (await ddb.send(new GetCommand({ TableName: CARE_CIRCLE_TABLE, Key: { id: circleId } }))).Item;
+
+  // Severity computed deterministically (safety signal); the sentence is
+  // written by Claude on Bedrock, with a deterministic fallback.
+  const doseLikes = doses as unknown as Array<{ status: string; medName: string }>;
+  const alertLikes = alerts as unknown as Array<{ severity: string; title: string; body: string }>;
+  const severity = computeSeverity(doseLikes, alertLikes);
+  const seniorFirstName = ((circle?.seniorDisplayName as string) ?? 'they').split(' ')[0];
+  const text = await generateSummaryText(doseLikes, alertLikes, severity, seniorFirstName);
+  const summary = { text, severity };
+
   await ddb.send(
     new PutCommand({
       TableName: DAILY_SUMMARY_TABLE,
@@ -107,41 +121,7 @@ async function getCircleDashboard(sub: string, circleId: string) {
     }),
   );
 
-  // CareCircle itself is ownerDefinedIn('ownerId') — only the OWNER could
-  // read it via direct model access, but every member needs the senior's
-  // name/initials for their own screens, so it rides along here too.
-  const circle = (await ddb.send(new GetCommand({ TableName: CARE_CIRCLE_TABLE, Key: { id: circleId } }))).Item;
-
   return { circle, meds, doses, alerts, summary };
-}
-
-interface DoseLike {
-  status: string;
-  medName: string;
-}
-interface AlertLike {
-  severity: string;
-  title: string;
-  body: string;
-}
-
-function buildDailySummary(doses: Array<Record<string, unknown>>, alerts: Array<Record<string, unknown>>) {
-  const doseList = doses as unknown as DoseLike[];
-  const alertList = alerts as unknown as AlertLike[];
-
-  const urgent = alertList.find((a) => a.severity === 'URGENT');
-  if (urgent) {
-    return { text: `Heads up — ${urgent.title.toLowerCase()}. ${urgent.body}`, severity: 'URGENT' };
-  }
-  const warn = alertList.find((a) => a.severity === 'WARN');
-  if (warn) {
-    return { text: `Heads up — ${warn.title.toLowerCase()}.`, severity: 'WARN' };
-  }
-  const missed = doseList.filter((d) => d.status === 'MISSED');
-  if (missed.length > 0) {
-    return { text: `Heads up — ${missed[0].medName} was missed today.`, severity: 'WARN' };
-  }
-  return { text: 'Quiet day — all meds taken, no concerns.', severity: 'QUIET' };
 }
 
 async function logDose(
@@ -225,6 +205,43 @@ async function listMembers(sub: string, circleId: string) {
   ).Items ?? [];
 }
 
+async function getCircleHistory(sub: string, circleId: string, days: number) {
+  await assertMembership(MEMBERSHIP_TABLE, sub, circleId, 'VIEWER');
+
+  const out: Array<Record<string, unknown>> = [];
+  for (let i = 0; i < days; i++) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const date = d.toISOString().slice(0, 10);
+
+    const doses =
+      (
+        await ddb.send(
+          new QueryCommand({
+            TableName: DOSE_EVENT_TABLE,
+            IndexName: DOSE_EVENT_CIRCLE_INDEX,
+            KeyConditionExpression: 'circleId = :c AND #date = :d',
+            ExpressionAttributeNames: { '#date': 'date' },
+            ExpressionAttributeValues: { ':c': circleId, ':d': date },
+          }),
+        )
+      ).Items ?? [];
+
+    out.push({
+      date,
+      label: d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }),
+      weekday: d.toLocaleDateString('en-US', { weekday: 'short' }),
+      taken: doses.filter((x) => x.status === 'TAKEN').length,
+      total: doses.length,
+      doses: doses
+        .slice()
+        .sort((a, b) => (a.scheduledForMinutes as number) - (b.scheduledForMinutes as number))
+        .map((x) => ({ medName: x.medName, scheduledFor: x.scheduledFor, status: x.status })),
+    });
+  }
+  return out;
+}
+
 async function createCircle(
   sub: string,
   email: string | undefined,
@@ -281,6 +298,12 @@ export const handler: AppSyncResolverHandler<Record<string, unknown>, unknown> =
         );
       case 'listMembers':
         return await listMembers(sub, event.arguments.circleId as string);
+      case 'getCircleHistory':
+        return await getCircleHistory(
+          sub,
+          event.arguments.circleId as string,
+          (event.arguments.days as number) ?? 7,
+        );
       case 'createCircle':
         return await createCircle(
           sub,

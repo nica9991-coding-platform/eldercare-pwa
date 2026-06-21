@@ -4,16 +4,27 @@ import {
   MOCK_CIRCLE,
   MOCK_MEDICATIONS,
   MOCK_MEMBERS,
-  SUMMARY_ALERT,
   SUMMARY_QUIET,
   WEEK_STRIP,
+  makeMockHistory,
   makeTodayDoses,
 } from './mockData';
-import type { Alert, CareCircle, DailySummary, Dose, Medication, Member, Role, ScheduleSlot } from './types';
+import type {
+  Alert,
+  CareCircle,
+  DailySummary,
+  Dose,
+  HistoryDay,
+  Medication,
+  Member,
+  Role,
+  ScheduleSlot,
+} from './types';
 import { clearQueue, enqueueDoseLog, getQueue } from './offlineQueue';
 import { getSimulatedOffline, useOnlineStatus } from './useOnlineStatus';
 import { client, isAmplifyLive } from './amplifyClient';
 import { useAuth } from './AuthContext';
+import { deriveSummary } from './summary';
 
 export type DashboardScenario = 'quiet' | 'alert' | 'loading' | 'empty';
 export type MembersScenario = 'empty' | 'populated';
@@ -35,6 +46,7 @@ interface CircleState {
   alerts: Alert[];
   summary: DailySummary;
   weekStrip: typeof WEEK_STRIP;
+  history: HistoryDay[];
   dashboardScenario: DashboardScenario;
   setDashboardScenario: (s: DashboardScenario) => void;
   membersScenario: MembersScenario;
@@ -104,6 +116,9 @@ function mapAlert(raw: Record<string, unknown>): Alert {
   };
 }
 
+// Stable across renders so the History view's memo deps don't thrash.
+const MOCK_HISTORY: HistoryDay[] = makeMockHistory();
+
 export function CircleProvider({ children }: { children: ReactNode }) {
   const live = isAmplifyLive();
   const auth = useAuth();
@@ -126,6 +141,7 @@ export function CircleProvider({ children }: { children: ReactNode }) {
   const [liveAlerts, setLiveAlerts] = useState<Alert[]>([]);
   const [liveSummary, setLiveSummary] = useState<DailySummary>(SUMMARY_QUIET);
   const [liveCircleId, setLiveCircleId] = useState<string | null>(null);
+  const [liveHistory, setLiveHistory] = useState<HistoryDay[] | null>(null);
   const [loading, setLoading] = useState(live);
   const [noCircle, setNoCircle] = useState(false);
   const replaying = useRef(false);
@@ -153,6 +169,9 @@ export function CircleProvider({ children }: { children: ReactNode }) {
 
     const membersRes = await client.queries.listMembers({ circleId });
     setMembers((membersRes.data as unknown as Record<string, unknown>[]).map(mapMember));
+
+    const historyRes = await client.queries.getCircleHistory({ circleId, days: 7 });
+    setLiveHistory(historyRes.data as unknown as HistoryDay[]);
   }
 
   // Live bootstrap: find the caller's circle (if any) and load it.
@@ -364,6 +383,14 @@ export function CircleProvider({ children }: { children: ReactNode }) {
 
   const doneCount = doses.filter((d) => d.status === 'TAKEN').length;
 
+  // Demo summary derived from real dose/alert state so the hero reflects what
+  // actually happened (a missed dose names the med, etc.). Live mode replaces
+  // the sentence with a Claude-on-Bedrock generation server-side; see
+  // amplify/functions/circle-resolver/summary.ts.
+  const demoCircleName = (demoCircleOverride ?? MOCK_CIRCLE).seniorDisplayName.split(' ')[0];
+  const demoAlerts = dashboardScenario === 'alert' ? MOCK_ALERTS_ACTIVE : [];
+  const demoSummary = deriveSummary(doses, demoAlerts, demoCircleName);
+
   const value = useMemo<CircleState>(
     () => ({
       mode: live ? 'live' : 'demo',
@@ -373,9 +400,10 @@ export function CircleProvider({ children }: { children: ReactNode }) {
       members,
       medications: live ? MOCK_MEDICATIONS : demoMedsOverride ?? MOCK_MEDICATIONS,
       doses,
-      alerts: live ? liveAlerts : dashboardScenario === 'alert' ? MOCK_ALERTS_ACTIVE : [],
-      summary: live ? liveSummary : dashboardScenario === 'alert' ? SUMMARY_ALERT : SUMMARY_QUIET,
+      alerts: live ? liveAlerts : demoAlerts,
+      summary: live ? liveSummary : demoSummary,
       weekStrip: WEEK_STRIP,
+      history: liveHistory ?? MOCK_HISTORY,
       dashboardScenario,
       setDashboardScenario,
       membersScenario,
@@ -395,7 +423,7 @@ export function CircleProvider({ children }: { children: ReactNode }) {
     // them would defeat this memo without changing behavior — they always
     // close over the latest state regardless.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [live, loading, noCircle, liveCircle, liveAlerts, liveSummary, members, doses, dashboardScenario, membersScenario, demoCircleOverride, demoMedsOverride, doneCount],
+    [live, loading, noCircle, liveCircle, liveAlerts, liveSummary, liveHistory, members, doses, dashboardScenario, membersScenario, demoCircleOverride, demoMedsOverride, doneCount],
   );
 
   return <CircleContext.Provider value={value}>{children}</CircleContext.Provider>;

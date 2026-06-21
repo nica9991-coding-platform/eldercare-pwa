@@ -141,6 +141,15 @@ const schema = a.schema({
     .handler(a.handler.function(circleResolver))
     .authorization((allow) => [allow.authenticated()]),
 
+  // Per-day adherence for the History view — aggregates DoseEvents over the
+  // last `days` days, membership-guarded like every other multi-party read.
+  getCircleHistory: a
+    .query()
+    .arguments({ circleId: a.id().required(), days: a.integer() })
+    .returns(a.json())
+    .handler(a.handler.function(circleResolver))
+    .authorization((allow) => [allow.authenticated()]),
+
   // The one bootstrap op with no membership to check yet — anyone
   // authenticated can create a circle, becoming its OWNER.
   createCircle: a

@@ -58,6 +58,9 @@ const sharedEnv = {
   // see amplify/README.md for the exact step.
   OTP_SENDER_EMAIL: 'no-reply@example.com',
   APP_URL: 'http://localhost:5173',
+  // Claude on Bedrock for the AI daily summary. Cross-region inference
+  // profile by default; change region/profile to match your account.
+  SUMMARY_MODEL_ID: 'us.anthropic.claude-haiku-4-5',
 };
 
 for (const [key, value] of Object.entries(sharedEnv)) {
@@ -76,6 +79,18 @@ const sesPolicy = new PolicyStatement({
 createAuthChallengeFn.addToRolePolicy(sesPolicy);
 circleResolverFn.addToRolePolicy(sesPolicy);
 createAuthChallengeFn.addEnvironment('OTP_SENDER_EMAIL', sharedEnv.OTP_SENDER_EMAIL);
+
+// Bedrock InvokeModel for the AI daily summary (Claude Haiku). Scoped to
+// Anthropic foundation models + inference profiles across regions.
+circleResolverFn.addToRolePolicy(
+  new PolicyStatement({
+    actions: ['bedrock:InvokeModel'],
+    resources: [
+      'arn:aws:bedrock:*::foundation-model/anthropic.*',
+      'arn:aws:bedrock:*:*:inference-profile/*anthropic.*',
+    ],
+  }),
+);
 
 // --- Scheduled missed-dose sweep, every 15 min ---
 const sweepStack = backend.sweepAlerts.resources.lambda.stack;

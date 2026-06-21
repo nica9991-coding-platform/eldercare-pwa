@@ -1,4 +1,4 @@
-import type { Alert, CareCircle, DailySummary, Dose, Medication, Member } from './types';
+import type { Alert, CareCircle, DailySummary, Dose, HistoryDay, Medication, Member } from './types';
 
 export const MOCK_CIRCLE: CareCircle = {
   id: 'circle-1',
@@ -142,3 +142,37 @@ export const WEEK_STRIP: Array<'taken' | 'partial' | 'future'> = [
   'future',
   'future',
 ];
+
+// Past 7 days of adherence for the History view. Index 0 = today; older days
+// follow. (Demo data; live mode aggregates real DoseEvents.)
+export function makeMockHistory(): HistoryDay[] {
+  const meds = [
+    { medName: 'Metformin', scheduledFor: '8:00 AM' },
+    { medName: 'Lisinopril', scheduledFor: '12:00 PM' },
+    { medName: 'Atorvastatin', scheduledFor: '6:00 PM' },
+  ];
+  // statuses per day, today-first; a couple of imperfect days for realism
+  const plan: Array<Array<'TAKEN' | 'MISSED' | 'SKIPPED' | 'PENDING'>> = [
+    ['TAKEN', 'PENDING', 'PENDING'], // today, in progress
+    ['TAKEN', 'TAKEN', 'TAKEN'],
+    ['TAKEN', 'MISSED', 'TAKEN'], // a missed midday dose
+    ['TAKEN', 'TAKEN', 'TAKEN'],
+    ['TAKEN', 'TAKEN', 'SKIPPED'],
+    ['TAKEN', 'TAKEN', 'TAKEN'],
+    ['TAKEN', 'TAKEN', 'TAKEN'],
+  ];
+
+  return plan.map((statuses, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const doses = statuses.map((status, j) => ({ ...meds[j], status }));
+    return {
+      date: d.toISOString().slice(0, 10),
+      label: d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }),
+      weekday: d.toLocaleDateString([], { weekday: 'short' }),
+      taken: doses.filter((x) => x.status === 'TAKEN').length,
+      total: doses.length,
+      doses,
+    };
+  });
+}
