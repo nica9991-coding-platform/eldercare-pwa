@@ -101,3 +101,52 @@ export async function generateSummaryText(
     return fallback;
   }
 }
+
+/**
+ * Radar — answer a free-text question about the circle using Claude on
+ * Bedrock, strictly read-only and grounded in the supplied facts. Returns a
+ * short calm answer; falls back to a generic line on any Bedrock error.
+ */
+export async function answerRadarQuestion(
+  question: string,
+  facts: Record<string, unknown>,
+  seniorFirstName: string,
+): Promise<string> {
+  const fallback = `Here's what I can see about ${seniorFirstName}: ${JSON.stringify(facts).slice(0, 200)}…`;
+
+  const system =
+    "You are Radar, a calm, plain-language assistant that answers a family " +
+    "member's questions about how their older relative's medication is going. " +
+    'You are STRICTLY READ-ONLY: never offer to change, log, schedule, or edit ' +
+    'anything — only describe what the data shows. Warm, brief (1–3 sentences), ' +
+    'never alarmist, never clinical. Answer only from the provided facts; if the ' +
+    "facts don't cover it, say so gently.";
+
+  try {
+    const res = await bedrock.send(
+      new InvokeModelCommand({
+        modelId: MODEL_ID,
+        contentType: 'application/json',
+        accept: 'application/json',
+        body: JSON.stringify({
+          anthropic_version: 'bedrock-2023-05-31',
+          max_tokens: 250,
+          system,
+          messages: [
+            {
+              role: 'user',
+              content: `Facts about ${seniorFirstName} (JSON):\n${JSON.stringify(facts)}\n\nQuestion: ${question}`,
+            },
+          ],
+        }),
+      }),
+    );
+    const payload = JSON.parse(new TextDecoder().decode(res.body)) as {
+      content?: Array<{ type: string; text?: string }>;
+    };
+    const text = payload.content?.find((b) => b.type === 'text')?.text?.trim();
+    return text && text.length > 0 ? text : fallback;
+  } catch {
+    return fallback;
+  }
+}

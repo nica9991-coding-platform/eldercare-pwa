@@ -10,7 +10,7 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 import { SESv2Client, SendEmailCommand } from '@aws-sdk/client-sesv2';
 import { assertMembership, UnauthorizedError } from '../assert-membership/handler';
-import { computeSeverity, generateSummaryText } from './summary';
+import { answerRadarQuestion, computeSeverity, generateSummaryText } from './summary';
 
 const ddbClient = new DynamoDBClient();
 const ddb = DynamoDBDocumentClient.from(ddbClient);
@@ -242,6 +242,38 @@ async function getCircleHistory(sub: string, circleId: string, days: number) {
   return out;
 }
 
+async function askRadar(sub: string, circleId: string, question: string) {
+  await assertMembership(MEMBERSHIP_TABLE, sub, circleId, 'VIEWER');
+
+  const circle = (await ddb.send(new GetCommand({ TableName: CARE_CIRCLE_TABLE, Key: { id: circleId } }))).Item;
+  const seniorFirstName = ((circle?.seniorDisplayName as string) ?? 'they').split(' ')[0];
+
+  // Read-only: today's doses + last 7 days + active alerts as grounding facts.
+  const today = await getCircleDashboard(sub, circleId);
+  const history = await getCircleHistory(sub, circleId, 7);
+  const facts = {
+    today: { doses: (today as { doses: unknown }).doses, summary: (today as { summary: unknown }).summary },
+    history,
+    alerts: (today as { alerts: unknown }).alerts,
+  };
+
+  const answer = await answerRadarQuestion(question, facts, seniorFirstName);
+  return { answer };
+}
+
+async function resolveAlert(sub: string, circleId: string, alertId: string) {
+  await assertMembership(MEMBERSHIP_TABLE, sub, circleId, 'FAMILY');
+  await ddb.send(
+    new UpdateCommand({
+      TableName: ALERT_TABLE,
+      Key: { id: alertId },
+      UpdateExpression: 'SET resolvedAt = :now',
+      ExpressionAttributeValues: { ':now': new Date().toISOString() },
+    }),
+  );
+  return { id: alertId, resolved: true };
+}
+
 async function createCircle(
   sub: string,
   email: string | undefined,
@@ -304,6 +336,10 @@ export const handler: AppSyncResolverHandler<Record<string, unknown>, unknown> =
           event.arguments.circleId as string,
           (event.arguments.days as number) ?? 7,
         );
+      case 'askRadar':
+        return await askRadar(sub, event.arguments.circleId as string, event.arguments.question as string);
+      case 'resolveAlert':
+        return await resolveAlert(sub, event.arguments.circleId as string, event.arguments.alertId as string);
       case 'createCircle':
         return await createCircle(
           sub,

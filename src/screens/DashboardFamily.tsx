@@ -113,11 +113,34 @@ export function DashboardFamily() {
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {circle.alerts.map((alert) => (
-                <AlertCard key={alert.id} alert={alert} />
+                <AlertCard key={alert.id} alert={alert} onClick={() => navigate(`/alert/${alert.id}`)} />
               ))}
             </div>
           </>
         )}
+
+        <button
+          onClick={() => navigate('/radar')}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            width: '100%',
+            textAlign: 'left',
+            background: 'var(--primary-tint)',
+            border: 'none',
+            borderRadius: 16,
+            padding: '14px 16px',
+            marginTop: 18,
+            color: 'var(--primary)',
+            fontWeight: 700,
+            fontSize: 15,
+          }}
+        >
+          <span aria-hidden="true" style={{ fontSize: 18 }}>✦</span>
+          Ask Radar about {circle.circle.seniorDisplayName.split(' ')[0]}'s week
+          <span aria-hidden="true" style={{ marginLeft: 'auto' }}>›</span>
+        </button>
 
         <button
           onClick={() => navigate('/history')}
@@ -246,15 +269,20 @@ function DoseRow({ dose }: { dose: Dose }) {
   );
 }
 
-function AlertCard({ alert }: { alert: Alert }) {
+function AlertCard({ alert, onClick }: { alert: Alert; onClick: () => void }) {
   const urgent = alert.severity === 'URGENT';
   return (
-    <div
+    <button
+      onClick={onClick}
       style={{
         display: 'flex',
         background: urgent ? 'var(--urgent-tint-2)' : 'var(--warning-tint-2)',
         borderRadius: 14,
         overflow: 'hidden',
+        border: 'none',
+        textAlign: 'left',
+        width: '100%',
+        padding: 0,
       }}
     >
       <div style={{ width: 5, background: urgent ? 'var(--urgent)' : 'var(--warning)', flexShrink: 0 }} aria-hidden="true" />
@@ -276,9 +304,12 @@ function AlertCard({ alert }: { alert: Alert }) {
         >
           <AlertCircleIcon size={12} color="#fff" /> {alert.severity}
         </span>
-        <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>{alert.title}</div>
+        <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+          {alert.title}
+          <span aria-hidden="true" style={{ marginLeft: 'auto', color: 'var(--text-muted)' }}>›</span>
+        </div>
         <div style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.4 }}>{alert.body}</div>
       </div>
-    </div>
+    </button>
   );
 }

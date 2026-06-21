@@ -150,6 +150,23 @@ const schema = a.schema({
     .handler(a.handler.function(circleResolver))
     .authorization((allow) => [allow.authenticated()]),
 
+  // Radar — read-only conversational Q&A over the circle's data, answered by
+  // Claude on Bedrock. Returns { answer }.
+  askRadar: a
+    .query()
+    .arguments({ circleId: a.id().required(), question: a.string().required() })
+    .returns(a.json())
+    .handler(a.handler.function(circleResolver))
+    .authorization((allow) => [allow.authenticated()]),
+
+  // Mark an alert resolved (sets resolvedAt). Min role FAMILY.
+  resolveAlert: a
+    .mutation()
+    .arguments({ circleId: a.id().required(), alertId: a.id().required() })
+    .returns(a.json())
+    .handler(a.handler.function(circleResolver))
+    .authorization((allow) => [allow.authenticated()]),
+
   // The one bootstrap op with no membership to check yet — anyone
   // authenticated can create a circle, becoming its OWNER.
   createCircle: a

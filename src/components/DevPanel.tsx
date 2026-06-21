@@ -68,6 +68,8 @@ export function DevPanel() {
                 { label: 'Today (senior)', active: false, onClick: () => navigate('/today') },
                 { label: 'Dashboard', active: false, onClick: () => navigate('/dashboard') },
                 { label: 'Members', active: false, onClick: () => navigate('/members') },
+                { label: 'Radar', active: false, onClick: () => navigate('/radar') },
+                { label: 'More', active: false, onClick: () => navigate('/more') },
               ]}
             />
           </div>

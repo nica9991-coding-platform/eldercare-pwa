@@ -25,6 +25,7 @@ import { getSimulatedOffline, useOnlineStatus } from './useOnlineStatus';
 import { client, isAmplifyLive } from './amplifyClient';
 import { useAuth } from './AuthContext';
 import { deriveSummary } from './summary';
+import { answerRadar } from './radar';
 
 export type DashboardScenario = 'quiet' | 'alert' | 'loading' | 'empty';
 export type MembersScenario = 'empty' | 'populated';
@@ -51,6 +52,9 @@ interface CircleState {
   setDashboardScenario: (s: DashboardScenario) => void;
   membersScenario: MembersScenario;
   setMembersScenario: (s: MembersScenario) => void;
+  getAlertById: (id: string) => Alert | undefined;
+  resolveAlert: (id: string) => Promise<void>;
+  askRadar: (question: string) => Promise<string>;
   logDose: (doseId: string, status: 'TAKEN' | 'SKIPPED') => Promise<void>;
   setDoseStatus: (doseId: string, status: Dose['status']) => void;
   undoSkip: (doseId: string) => void;
@@ -142,6 +146,7 @@ export function CircleProvider({ children }: { children: ReactNode }) {
   const [liveSummary, setLiveSummary] = useState<DailySummary>(SUMMARY_QUIET);
   const [liveCircleId, setLiveCircleId] = useState<string | null>(null);
   const [liveHistory, setLiveHistory] = useState<HistoryDay[] | null>(null);
+  const [resolvedAlertIds, setResolvedAlertIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(live);
   const [noCircle, setNoCircle] = useState(false);
   const replaying = useRef(false);
@@ -388,8 +393,41 @@ export function CircleProvider({ children }: { children: ReactNode }) {
   // the sentence with a Claude-on-Bedrock generation server-side; see
   // amplify/functions/circle-resolver/summary.ts.
   const demoCircleName = (demoCircleOverride ?? MOCK_CIRCLE).seniorDisplayName.split(' ')[0];
-  const demoAlerts = dashboardScenario === 'alert' ? MOCK_ALERTS_ACTIVE : [];
-  const demoSummary = deriveSummary(doses, demoAlerts, demoCircleName);
+  // Active alerts = source minus any the user has resolved this session.
+  const sourceAlerts = live ? liveAlerts : dashboardScenario === 'alert' ? MOCK_ALERTS_ACTIVE : [];
+  const activeAlerts = sourceAlerts.filter((a) => !resolvedAlertIds.has(a.id));
+  const demoSummary = deriveSummary(doses, activeAlerts, demoCircleName);
+
+  const getAlertById = (id: string) => sourceAlerts.find((a) => a.id === id);
+
+  const resolveAlert = async (id: string) => {
+    setResolvedAlertIds((prev) => new Set(prev).add(id));
+    if (live && liveCircleId) {
+      await client.mutations.resolveAlert({ circleId: liveCircleId, alertId: id });
+      await loadDashboard(liveCircleId);
+    }
+  };
+
+  const askRadar = async (question: string): Promise<string> => {
+    const ctx = {
+      seniorFirstName: (live ? liveCircle ?? MOCK_CIRCLE : demoCircleOverride ?? MOCK_CIRCLE).seniorDisplayName.split(
+        ' ',
+      )[0],
+      doses,
+      history: liveHistory ?? MOCK_HISTORY,
+      alerts: activeAlerts,
+    };
+    if (live && liveCircleId) {
+      try {
+        const res = await client.queries.askRadar({ circleId: liveCircleId, question });
+        const text = (res.data as unknown as { answer?: string })?.answer;
+        if (text) return text;
+      } catch {
+        // fall through to deterministic answer
+      }
+    }
+    return answerRadar(question, ctx);
+  };
 
   const value = useMemo<CircleState>(
     () => ({
@@ -400,7 +438,10 @@ export function CircleProvider({ children }: { children: ReactNode }) {
       members,
       medications: live ? MOCK_MEDICATIONS : demoMedsOverride ?? MOCK_MEDICATIONS,
       doses,
-      alerts: live ? liveAlerts : demoAlerts,
+      alerts: activeAlerts,
+      getAlertById,
+      resolveAlert,
+      askRadar,
       summary: live ? liveSummary : demoSummary,
       weekStrip: WEEK_STRIP,
       history: liveHistory ?? MOCK_HISTORY,
@@ -423,7 +464,7 @@ export function CircleProvider({ children }: { children: ReactNode }) {
     // them would defeat this memo without changing behavior — they always
     // close over the latest state regardless.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [live, loading, noCircle, liveCircle, liveAlerts, liveSummary, liveHistory, members, doses, dashboardScenario, membersScenario, demoCircleOverride, demoMedsOverride, doneCount],
+    [live, loading, noCircle, liveCircle, liveAlerts, liveSummary, liveHistory, resolvedAlertIds, members, doses, dashboardScenario, membersScenario, demoCircleOverride, demoMedsOverride, doneCount],
   );
 
   return <CircleContext.Provider value={value}>{children}</CircleContext.Provider>;

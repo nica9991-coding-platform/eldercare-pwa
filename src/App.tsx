@@ -7,8 +7,10 @@ import { TodaySenior } from './screens/TodaySenior';
 import { DashboardFamily } from './screens/DashboardFamily';
 import { Onboard } from './screens/Onboard';
 import { HistoryView } from './screens/HistoryView';
+import { Radar } from './screens/Radar';
+import { AlertDetail } from './screens/AlertDetail';
+import { More } from './screens/More';
 import { DevPanel } from './components/DevPanel';
-import { BottomTabBar } from './components/BottomTabBar';
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, authReady } = useAuth();
@@ -17,26 +19,6 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
   if (!authReady) return null;
   if (!isAuthenticated) return <Navigate to="/" replace />;
   return <>{children}</>;
-}
-
-function ComingSoon({ title }: { title: string }) {
-  return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-      <div
-        style={{
-          flex: 1,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          color: 'var(--text-muted)',
-          fontSize: 16,
-        }}
-      >
-        {title} — not in this design bundle yet.
-      </div>
-      <BottomTabBar />
-    </div>
-  );
 }
 
 function App() {
@@ -87,10 +69,26 @@ function App() {
               }
             />
             <Route
+              path="/radar"
+              element={
+                <RequireAuth>
+                  <Radar />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/alert/:id"
+              element={
+                <RequireAuth>
+                  <AlertDetail />
+                </RequireAuth>
+              }
+            />
+            <Route
               path="/more"
               element={
                 <RequireAuth>
-                  <ComingSoon title="More" />
+                  <More />
                 </RequireAuth>
               }
             />
