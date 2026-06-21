@@ -64,6 +64,7 @@ export function DevPanel() {
             <DevButtonRow
               options={[
                 { label: 'Entry', active: false, onClick: () => navigate('/') },
+                { label: 'Onboarding', active: false, onClick: () => navigate('/onboard') },
                 { label: 'Today (senior)', active: false, onClick: () => navigate('/today') },
                 { label: 'Dashboard', active: false, onClick: () => navigate('/dashboard') },
                 { label: 'Members', active: false, onClick: () => navigate('/members') },

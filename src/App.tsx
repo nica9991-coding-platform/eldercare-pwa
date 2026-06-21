@@ -5,6 +5,7 @@ import { EntryScreen } from './screens/EntryScreen';
 import { MembersInvite } from './screens/MembersInvite';
 import { TodaySenior } from './screens/TodaySenior';
 import { DashboardFamily } from './screens/DashboardFamily';
+import { Onboard } from './screens/Onboard';
 import { DevPanel } from './components/DevPanel';
 import { BottomTabBar } from './components/BottomTabBar';
 
@@ -44,6 +45,14 @@ function App() {
         <BrowserRouter>
           <Routes>
             <Route path="/" element={<EntryScreen />} />
+            <Route
+              path="/onboard"
+              element={
+                <RequireAuth>
+                  <Onboard />
+                </RequireAuth>
+              }
+            />
             <Route
               path="/dashboard"
               element={

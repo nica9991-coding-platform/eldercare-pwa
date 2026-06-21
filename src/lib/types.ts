@@ -29,7 +29,13 @@ export interface Medication {
   circleId: string;
   name: string;
   dose: string;
+  schedule?: ScheduleSlot[];
   iconGlyph?: 'capsule';
+}
+
+export interface ScheduleSlot {
+  label: string; // e.g. "8:00 AM"
+  minutes: number; // minutes since midnight, for sorting/dose generation
 }
 
 export interface Dose {

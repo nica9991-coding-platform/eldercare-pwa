@@ -9,7 +9,7 @@ import {
   WEEK_STRIP,
   makeTodayDoses,
 } from './mockData';
-import type { Alert, CareCircle, DailySummary, Dose, Medication, Member, Role } from './types';
+import type { Alert, CareCircle, DailySummary, Dose, Medication, Member, Role, ScheduleSlot } from './types';
 import { clearQueue, enqueueDoseLog, getQueue } from './offlineQueue';
 import { getSimulatedOffline, useOnlineStatus } from './useOnlineStatus';
 import { client, isAmplifyLive } from './amplifyClient';
@@ -17,6 +17,12 @@ import { useAuth } from './AuthContext';
 
 export type DashboardScenario = 'quiet' | 'alert' | 'loading' | 'empty';
 export type MembersScenario = 'empty' | 'populated';
+
+export interface DraftMedication {
+  name: string;
+  dose: string;
+  schedule: ScheduleSlot[];
+}
 
 interface CircleState {
   mode: 'live' | 'demo';
@@ -39,8 +45,16 @@ interface CircleState {
   resetDoses: () => void;
   inviteMember: (email: string, role: Role) => Promise<Member>;
   createCircle: (seniorDisplayName: string, seniorInitials: string, timezone: string) => Promise<void>;
+  completeOnboarding: (seniorDisplayName: string, timezone: string, meds: DraftMedication[]) => Promise<void>;
   doneCount: number;
   totalCount: number;
+}
+
+export function initialsFor(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
 const CircleContext = createContext<CircleState | null>(null);
@@ -99,6 +113,12 @@ export function CircleProvider({ children }: { children: ReactNode }) {
   const [doses, setDoses] = useState<Dose[]>(live ? [] : makeTodayDoses());
   const [dashboardScenario, setDashboardScenario] = useState<DashboardScenario>('quiet');
   const [membersScenario, setMembersScenarioState] = useState<MembersScenario>('populated');
+
+  // Demo-mode onboarding result: once the user completes the onboarding flow
+  // without a backend, these override the canned mock circle/meds so the
+  // dashboard and Today screen reflect what they just entered.
+  const [demoCircleOverride, setDemoCircleOverride] = useState<CareCircle | null>(null);
+  const [demoMedsOverride, setDemoMedsOverride] = useState<Medication[] | null>(null);
 
   // Live-only state — demo mode derives circle/alerts/summary from the
   // scenario toggles below instead.
@@ -259,6 +279,89 @@ export function CircleProvider({ children }: { children: ReactNode }) {
     await loadDashboard(circle.id as string);
   };
 
+  const completeOnboarding = async (
+    seniorDisplayName: string,
+    timezone: string,
+    meds: DraftMedication[],
+  ) => {
+    const seniorInitials = initialsFor(seniorDisplayName);
+
+    if (live) {
+      const res = await client.mutations.createCircle({ seniorDisplayName, seniorInitials, timezone });
+      const circle = res.data as unknown as Record<string, unknown>;
+      const circleId = circle.id as string;
+      // Medication has authenticated() auth, so the owner can create rows
+      // directly; the resolver materializes today's doses on first dashboard
+      // load from each med's schedule.
+      await Promise.all(
+        meds.map((m) =>
+          client.models.Medication.create({
+            circleId,
+            name: m.name,
+            dose: m.dose,
+            schedule: m.schedule,
+          }),
+        ),
+      );
+      setLiveCircleId(circleId);
+      setNoCircle(false);
+      await loadDashboard(circleId);
+      return;
+    }
+
+    // Demo mode: build the circle, meds, and today's PENDING doses locally so
+    // the rest of the app reflects what was just entered.
+    const circleId = `demo-${Date.now()}`;
+    const newCircle: CareCircle = {
+      id: circleId,
+      seniorDisplayName,
+      seniorInitials,
+      timezone,
+      ownerId: 'user-rosa',
+    };
+    const newMeds: Medication[] = meds.map((m, i) => ({
+      id: `demo-med-${i}`,
+      circleId,
+      name: m.name,
+      dose: m.dose,
+      schedule: m.schedule,
+      iconGlyph: 'capsule',
+    }));
+    const newDoses: Dose[] = newMeds
+      .flatMap((m) =>
+        (m.schedule ?? []).map((slot, j) => ({
+          id: `demo-dose-${m.id}-${j}`,
+          circleId,
+          medicationId: m.id,
+          medName: m.name,
+          medDose: m.dose,
+          scheduledFor: slot.label,
+          scheduledForMinutes: slot.minutes,
+          status: 'PENDING' as const,
+        })),
+      )
+      .sort((a, b) => a.scheduledForMinutes - b.scheduledForMinutes);
+
+    setDemoCircleOverride(newCircle);
+    setDemoMedsOverride(newMeds);
+    setDoses(newDoses);
+    setMembers([
+      {
+        userId: 'user-rosa',
+        circleId,
+        name: 'You',
+        email: 'rosa@example.com',
+        role: 'OWNER',
+        status: 'ACTIVE',
+        avatarColor: 'teal',
+        isSelf: true,
+      },
+    ]);
+    setMembersScenarioState('empty');
+    // First-day empty state is the natural landing right after setup.
+    setDashboardScenario('empty');
+  };
+
   const doneCount = doses.filter((d) => d.status === 'TAKEN').length;
 
   const value = useMemo<CircleState>(
@@ -266,9 +369,9 @@ export function CircleProvider({ children }: { children: ReactNode }) {
       mode: live ? 'live' : 'demo',
       loading,
       noCircle,
-      circle: live ? liveCircle ?? MOCK_CIRCLE : MOCK_CIRCLE,
+      circle: live ? liveCircle ?? MOCK_CIRCLE : demoCircleOverride ?? MOCK_CIRCLE,
       members,
-      medications: MOCK_MEDICATIONS,
+      medications: live ? MOCK_MEDICATIONS : demoMedsOverride ?? MOCK_MEDICATIONS,
       doses,
       alerts: live ? liveAlerts : dashboardScenario === 'alert' ? MOCK_ALERTS_ACTIVE : [],
       summary: live ? liveSummary : dashboardScenario === 'alert' ? SUMMARY_ALERT : SUMMARY_QUIET,
@@ -283,6 +386,7 @@ export function CircleProvider({ children }: { children: ReactNode }) {
       resetDoses,
       inviteMember,
       createCircle,
+      completeOnboarding,
       doneCount,
       totalCount: doses.length,
     }),
@@ -291,7 +395,7 @@ export function CircleProvider({ children }: { children: ReactNode }) {
     // them would defeat this memo without changing behavior — they always
     // close over the latest state regardless.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [live, loading, noCircle, liveCircle, liveAlerts, liveSummary, members, doses, dashboardScenario, membersScenario, doneCount],
+    [live, loading, noCircle, liveCircle, liveAlerts, liveSummary, members, doses, dashboardScenario, membersScenario, demoCircleOverride, demoMedsOverride, doneCount],
   );
 
   return <CircleContext.Provider value={value}>{children}</CircleContext.Provider>;

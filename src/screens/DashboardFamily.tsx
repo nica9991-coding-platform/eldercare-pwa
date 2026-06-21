@@ -29,12 +29,12 @@ export function DashboardFamily() {
       <Shell>
         <div style={{ padding: 32, textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
           <BrandMark size={48} />
-          <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>No care circle yet</h1>
+          <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Let's set up a care circle</h1>
           <p style={{ fontSize: 16, color: 'var(--text-secondary)', margin: 0, lineHeight: 1.5 }}>
-            You're connected to the live backend, but this account doesn't belong to a care circle yet. The
-            onboarding screen to create one isn't built yet — use the preview-controls panel to create a demo
-            circle for now.
+            You're signed in, but this account doesn't have a care circle yet. Take a minute to create one and
+            add the medications you'll be tracking.
           </p>
+          <Button onClick={() => navigate('/onboard')}>Get started</Button>
         </div>
       </Shell>
     );
