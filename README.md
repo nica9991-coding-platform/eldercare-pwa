@@ -34,39 +34,47 @@ Open the printed `localhost` URL. The app runs in **demo mode** against mock dat
 
 ## The four screens
 
+Bottom nav has five tabs (Today / History / Radar / Circle / More); other screens are reached by navigation.
+
 | Route | Screen | Notes |
 |---|---|---|
 | `/` | **Entry** | Email → 6-digit code sign-in + accept-invite (6 states) |
-| `/today` | **Today (Senior)** ★ | The hero screen — kiosk-simple dose confirmation, AAA contrast, 76px buttons, offline-first (6 states) |
-| `/dashboard` | **Dashboard (Family)** | At-a-glance reassurance + AI summary hero + severity alerts (4 states) |
+| `/onboard` | **Onboard** | 3-step create-circle: name senior → add meds w/ schedules → review |
+| `/today` | **Today (Senior)** ★ | The hero screen — kiosk-simple dose confirmation, AAA contrast, 76px buttons, offline-first (6 states), zero nav chrome |
+| `/dashboard` | **Dashboard (Family)** | "Today" tab — reassurance + AI summary hero + severity alerts (4 states) |
+| `/history` | **History** | 7-day adherence + expandable per-day detail |
+| `/radar` | **Radar** | Read-only conversational Q&A over the circle's data |
+| `/alert/:id` | **Alert detail** | Severity, suggested actions, mark-resolved |
 | `/members` | **Members & Invite** | Care-circle roster + role/permission management (4 states) |
+| `/more` | **More** | Menu: Radar, History, Circle, open senior view, sign out |
 
 ## Project layout
 
 ```
 src/
-  screens/        the four screens above
+  screens/        the screens above
   components/     shared UI (Button, Avatar, Icons, AppHeader, BottomTabBar, DevPanel)
-  lib/            AuthContext, CircleContext, types, mock data, offline queue, Amplify client
+  lib/            Auth/Circle contexts, types, mock data, offline queue, Amplify client, summary + radar generators
   styles/         design tokens
-amplify/          AWS Amplify Gen 2 backend (see amplify/README.md)
+amplify/          AWS Amplify Gen 2 backend (see amplify/README.md) + amplify.yml hosting build spec
 ```
 
-## Backend (optional, not deployed)
+## Backend (scaffolded, deploy-ready, not yet deployed)
 
-Everything in `amplify/` is a working scaffold of the cloud backend — multi-party role-based auth, the membership-guarded API, and a scheduled missed-dose alert sweep. It is **not deployed**; the app works fully without it. To stand it up against a real AWS account, follow **[`amplify/README.md`](amplify/README.md)**.
+Everything in `amplify/` is a working backend: Cognito email-code auth, a membership/role-guarded AppSync+DynamoDB API, onboarding, dose logging, invites, dashboard/history aggregation, an **AI daily summary and Radar Q&A via Claude on Bedrock** (with deterministic fallbacks), alert resolve, and a 15-min missed-dose sweep. It is **not deployed** — the app runs fully in demo mode until `amplify_outputs.json` exists, then `src/lib/amplifyClient.ts` auto-detects it and flips to live with no code change.
 
-The backend choice (AWS Amplify) came from the design handoff's architecture recommendation. It's swappable — a simpler backend (Supabase/Firebase) could serve the same frontend with modest changes to `src/lib/AuthContext.tsx` and `src/lib/CircleContext.tsx`.
+**To deploy:** follow **[`amplify/README.md`](amplify/README.md)** — it has the pre-deploy checklist (3 values in `backend.ts` → `DEPLOY_CONFIG`), the Bedrock/SES setup, and both the sandbox and Amplify Hosting paths.
+
+The backend choice (AWS Amplify) came from the design handoff's architecture recommendation. It's swappable — a simpler backend (Supabase/Firebase) could serve the same frontend with changes confined to `src/lib/AuthContext.tsx` and `src/lib/CircleContext.tsx`.
 
 ## Status / known gaps
 
-Implemented and verified (typechecks, lints, runs):
-- All four screens, all design states, faithful to the spec
+Implemented and verified (typechecks, production build, runs):
+- All nine screens + five-tab nav, faithful to the design spec
 - Offline dose logging with IndexedDB queue + replay
 - Demo mode and a live-Amplify code path behind one interface
+- AI summary + Radar (Bedrock in live; data-derived in demo)
 
-Deliberately deferred (flagged in code + `amplify/README.md`):
-- Onboarding / "create circle" screen (wasn't in the four-screen handoff)
-- Full invite-acceptance token flow
-- "No check-in" presence alerts (needs a heartbeat field)
-- LLM-generated daily summary (currently a deterministic rule; the AI route is a drop-in replacement)
+Deliberately simplified (flagged in code + `amplify/README.md`):
+- Full invite-acceptance token flow (membership row uses a placeholder userId until accept)
+- "No check-in" presence alerts (needs a heartbeat field in the schema)

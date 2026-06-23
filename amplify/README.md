@@ -1,48 +1,81 @@
-# Deploying the backend
+# Deploying the backend to AWS
 
-The app runs today against mock data with no AWS account needed. This is how to switch it to the real Amplify Gen 2 backend in `amplify/` once you're ready.
+The app runs today against mock data with **no AWS account needed** (demo mode, sign-in code `123456`). This guide switches it to the real AWS Amplify Gen 2 backend in `amplify/`. Nothing here has to be done until you have an AWS account — the app keeps working in demo mode until `amplify_outputs.json` exists.
+
+---
+
+## Pre-deploy checklist (the only things you must set)
+
+All three live in one block at the top of [`amplify/backend.ts`](backend.ts) → `DEPLOY_CONFIG`:
+
+| Value | What to set it to | Why |
+|---|---|---|
+| `OTP_SENDER_EMAIL` | An email/domain you've **verified in Amazon SES** | The "From" on sign-in codes + invites. The placeholder won't send. |
+| `APP_URL` | Your deployed frontend URL (Amplify Hosting or custom domain) | Used in invite-email links. Leave as localhost for sandbox testing. |
+| `SUMMARY_MODEL_ID` | A Claude-on-Bedrock inference profile in a region where you've **enabled model access** (default `us.anthropic.claude-haiku-4-5`) | Powers the AI daily summary + Radar. Falls back to a deterministic sentence if Bedrock is unreachable, so this is non-fatal if skipped. |
+
+---
 
 ## 1. One-time AWS setup
 
-1. Create an AWS account if you don't have one, and sign in to the console.
+1. Create an AWS account and sign in to the console.
 2. Install the AWS CLI: https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html
-3. Configure credentials: `aws configure` (access key + secret from an IAM user with admin or sufficiently broad permissions for Cognito/AppSync/DynamoDB/Lambda/SES/EventBridge), or `aws sso login` if your org uses IAM Identity Center.
-4. Verify it works: `aws sts get-caller-identity` should print your account.
+3. Configure credentials: `aws configure` (access key + secret from an IAM user with broad permissions for Cognito/AppSync/DynamoDB/Lambda/SES/EventBridge/Bedrock), or `aws sso login` for IAM Identity Center.
+4. Verify: `aws sts get-caller-identity` should print your account.
 
-## 2. Deploy a sandbox
+## 2. Enable Claude model access in Bedrock (for the AI features)
 
-From the project root:
+Bedrock blocks model access by default — you must opt in, once per account+region:
+
+1. AWS Console → **Bedrock** → **Model access** → **Manage model access**.
+2. Enable **Anthropic → Claude Haiku 4.5** (and any others you want) in your region.
+3. Make sure `SUMMARY_MODEL_ID`'s region prefix in `backend.ts` matches that region (`us.` for US, `eu.` for Europe, `apac.` for Asia-Pacific). Approval is usually instant.
+
+> Skippable for a first deploy — without it the summary/Radar just use the built-in deterministic fallback and everything else works.
+
+## 3. Verify an SES sender (for the sign-in code + invite emails)
+
+SES starts in **sandbox mode**: it can only send to/from verified addresses.
+
+1. Console → **SES** → **Verified identities** → verify an email you control.
+2. Set `OTP_SENDER_EMAIL` in `backend.ts` to that address.
+3. In SES sandbox you can only sign in users whose addresses you've **also** verified. To onboard real users, request **production access** (SES → Account dashboard → Request production access — usually approved within a day).
+
+## 4. Deploy
+
+Two paths — pick one.
+
+### A) Personal dev sandbox (fastest, for testing)
 
 ```
 npm run sandbox
 ```
 
-This runs `ampx sandbox`, which provisions a personal dev stack (Cognito User Pool, AppSync API, DynamoDB tables, the three Lambda functions) under your AWS account and writes `amplify_outputs.json` to the project root. Leave it running — it watches `amplify/` and redeploys on changes. `Ctrl+C` to stop; resources stay until you delete them.
+Runs `ampx sandbox`: provisions a personal stack (Cognito User Pool, AppSync API, DynamoDB tables, the Lambdas, the 15-min alert-sweep schedule) and writes `amplify_outputs.json` to the project root. Leave it running — it watches `amplify/` and redeploys on save. `Ctrl+C` stops watching; resources stay until `npm run sandbox:delete`.
 
-**Cost note:** everything here fits comfortably in the AWS free tier for light personal testing (a handful of users, a few hundred requests/day). It is still real metered infrastructure — Lambda invocations, DynamoDB reads/writes, SES sends. Tear it down with `npm run sandbox:delete` when you're done testing.
+### B) Amplify Hosting (production, CI from GitHub)
 
-## 3. Verify an SES sender (required for the sign-in code emails)
+1. Console → **Amplify** → **Host web app** → connect the GitHub repo + branch.
+2. Amplify auto-detects [`amplify.yml`](../amplify.yml) and runs it: deploys the backend, then builds the Vite PWA. Done — every push redeploys.
+3. After the first deploy, set `APP_URL` to the Amplify URL it gives you and push again.
 
-SES starts in sandbox mode: it can only send *to* verified addresses, from a verified sender.
+## 5. Run / use it
 
-1. AWS Console → SES → "Verified identities" → verify an email address you control (e.g. your own).
-2. Open `amplify/backend.ts` and change `OTP_SENDER_EMAIL: 'no-reply@example.com'` to that verified address.
-3. While in SES sandbox mode, you can only sign in with email addresses you've *also* verified in SES (add them the same way). To sign in real users without that limit, request SES production access (Console → SES → "Account dashboard" → "Request production access" — usually approved within a day).
+- **Sandbox:** `npm run dev` — `src/lib/amplifyClient.ts` auto-detects `amplify_outputs.json`, so the app flips to live with no code change. The Entry screen now emails a real 6-digit code instead of accepting `123456`.
+- **Hosting:** just visit the Amplify URL.
 
-## 4. Run the app against the live backend
+First sign-in lands on **"Let's set up a care circle"** → the **Onboard** screen (`/onboard`) creates the circle + meds for real via the `createCircle` mutation.
 
-```
-npm run dev
-```
+## Cost note
 
-`src/lib/amplifyClient.ts` detects `amplify_outputs.json` automatically — no code changes needed. The Entry screen now sends a real 6-digit code by email instead of accepting the demo code `123456`; AuthContext and CircleContext switch to calling the real Cognito/AppSync API behind the same interface the screens already use.
+Light personal testing (a few users, a few hundred requests/day) fits comfortably in the AWS free tier. It's still real metered infra — Lambda, DynamoDB, SES, Bedrock tokens. Tear down a sandbox with `npm run sandbox:delete` when done.
 
-## 5. Create your first care circle
+---
 
-There's no onboarding screen yet (it was out of scope for the four screens we built — see the architecture doc's MVP slice, screen 1). After signing in for the first time, the Dashboard will say "no care circle yet." Open the preview-controls panel (gear icon, bottom-right) and use **Create "Eleanor Alvarez" circle** to bootstrap one as a stopgap, or build the real onboarding screen next and call the already-wired `createCircle` mutation from it.
+## What's wired vs. still simplified
 
-## What's deliberately simplified for this scaffold
+**Fully wired for live:** Cognito email-code auth · membership/role-guarded AppSync+DynamoDB · onboarding (createCircle + medications) · dose logging w/ offline replay · invites (inviteMember) · dashboard + history aggregation · **AI daily summary (Claude Haiku on Bedrock, deterministic fallback)** · **Radar Q&A (Bedrock, read-only)** · alert resolve · 15-min missed-dose sweep.
 
-- **Invite acceptance**: `inviteMember` creates a Membership row with a placeholder `userId` until the invited person actually signs up. There's no token-resolution mutation yet to link that row to their real Cognito sub on accept — the Entry screen's invite flow falls back to a normal sign-in in live mode rather than pretending this works.
-- **"No check-in" alerts**: the sweep Lambda only detects missed doses (the data for that exists). The design's "no check-in since 9am" WARN alert needs a presence/heartbeat record that isn't in the schema yet.
-- **Daily summary**: a small deterministic rule (`buildDailySummary` in `circle-resolver/handler.ts`), not an LLM call. The architecture doc's "AI Kit" route (Bedrock/Claude generating the sentence) is a drop-in replacement for that one function whenever you want it.
+**Deliberately simplified (flagged in code):**
+- **Invite acceptance** — `inviteMember` writes a Membership row with a placeholder `userId`; there's no token-resolution mutation yet to link it to the invitee's real Cognito sub on accept.
+- **"No check-in" alerts** — the sweep only detects missed doses. The design's "no check-in since 9am" WARN needs a presence/heartbeat field not yet in the schema.

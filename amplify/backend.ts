@@ -12,6 +12,24 @@ import { defineAuthChallenge } from './auth/define-auth-challenge/resource';
 import { createAuthChallenge } from './auth/create-auth-challenge/resource';
 import { verifyAuthChallengeResponse } from './auth/verify-auth-challenge-response/resource';
 
+// ┌───────────────────────────────────────────────────────────────────────┐
+// │ CHANGE BEFORE DEPLOY — the only values you must set for production.     │
+// │ Everything else (table names, IAM, schedules) is wired automatically.  │
+// │ See amplify/README.md for the matching AWS Console steps.              │
+// └───────────────────────────────────────────────────────────────────────┘
+const DEPLOY_CONFIG = {
+  // An email address (or domain) you have VERIFIED in Amazon SES. Sign-in
+  // codes and invites are sent From this address. Placeholder won't send.
+  OTP_SENDER_EMAIL: 'no-reply@example.com',
+  // Public URL of the deployed frontend — used in invite-email links.
+  // Set to your Amplify Hosting URL (or custom domain) in production.
+  APP_URL: 'http://localhost:5173',
+  // Claude model on Bedrock for the AI summary + Radar. This is a
+  // cross-region inference profile id; the region prefix (us./eu./apac.)
+  // must match where you enabled Claude model access in the Bedrock console.
+  SUMMARY_MODEL_ID: 'us.anthropic.claude-haiku-4-5',
+};
+
 const backend = defineBackend({
   auth,
   data,
@@ -54,13 +72,7 @@ const sharedEnv = {
   ALERT_CIRCLE_INDEX_NAME: 'byCircle',
   DAILY_SUMMARY_TABLE_NAME: tables.DailySummary.tableName,
   CARE_CIRCLE_TABLE_NAME: tables.CareCircle.tableName,
-  // Set a real verified SES sender once the domain/identity is set up;
-  // see amplify/README.md for the exact step.
-  OTP_SENDER_EMAIL: 'no-reply@example.com',
-  APP_URL: 'http://localhost:5173',
-  // Claude on Bedrock for the AI daily summary. Cross-region inference
-  // profile by default; change region/profile to match your account.
-  SUMMARY_MODEL_ID: 'us.anthropic.claude-haiku-4-5',
+  ...DEPLOY_CONFIG,
 };
 
 for (const [key, value] of Object.entries(sharedEnv)) {
